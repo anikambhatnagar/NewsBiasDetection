@@ -24,7 +24,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from wordcloud import WordCloud
 
 # Define the file path manually
-csv_file_path = r'C:\Users\user1\Desktop\AI\SURP\nlp\data\unique_articles_df.csv'
+csv_file_path = r'..\data\unique_articles_df.csv'
 
 class bigramLanguageModel:
     def __init__(self, args):
