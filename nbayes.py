@@ -1,4 +1,4 @@
-# SCOTT NELSON
+# Scott Nelson & Anika Bhatnagar
 from transformers import LongformerTokenizerFast, LongformerForSequenceClassification, AdamW
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 from sklearn.model_selection import train_test_split, cross_val_score
@@ -34,14 +34,10 @@ class  BagOfWords:
         else:
             self.load_model()
 
-    def evaluate_or_predict(self, text_test, labels_test=None, training=True):
-        if training:
-            predictions = self.predict(text_test)
-            print(classification_report(labels_test, predictions))
-            print('Accuracy: ', accuracy_score(labels_test, predictions))
-        else:
-            return self.predict(text_test)
-        
+    def predict(self, text_test, labels_test=None, training=True):
+        features = self.vectorizer.transform(text_test)
+        return self.classifier.predict(features)
+
     def evaluate(self, text_test, labels_test):
         predictions = self.predict(text_test)
         print(classification_report(labels_test, predictions))
@@ -52,10 +48,10 @@ class  BagOfWords:
         print('Cross validation scores:', scores)
         print('Mean cross validation score:', scores.mean())
         
-    def save_model(self, dir_path='models/'):
+    def save_model(self, dir_path='models/', file_name='model.joblib'):
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
-        joblib.dump((self.classifier, self.vectorizer), dir_path + 'model.joblib')
+        joblib.dump((self.classifier, self.vectorizer), dir_path + file_name)
 
     def load_model(self, file_path):
         self.classifier, self.vectorizer = joblib.load(file_path)
@@ -75,7 +71,7 @@ class TextDataset(Dataset):
         return len(self.labels)
 
 class LongformerModel:
-    def __init__(self, df, num_labels=2, batch_size=16, epochs=3):
+    def __init__(self, df, num_labels=4, batch_size=16, epochs=3):
         self.df = df
         self.tokenizer = LongformerTokenizerFast.from_pretrained('allenai/longformer-base-4096')
         self.model = LongformerForSequenceClassification.from_pretrained('allenai/longformer-base-4096', num_labels=num_labels)
@@ -116,12 +112,39 @@ class LongformerModel:
                     loss.backward()
                     train_loss.append(loss.item())
                     optimizer.step()
-
-            torch.save(self.model.state_dict(), model_name)
+            print(model_name)
+            print(type(model_name))
+            torch.save(self.model.state_dict(),model_name)
             return train_loss
         else:
             self.model.load_state_dict(torch.load('model_path.pt'))
 
+    def evaluate(self, val_dataset):
+        val_loader = DataLoader(val_dataset, batch_size=self.batch_size, shuffle=True)
+
+        self.model.eval()
+        val_loss=[]
+
+        with torch.no_grad():
+            for batch in tqdm(val_loader):
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                outputs = self.model(input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss
+                val_loss.append(loss.item())
+        return val_loss
+                
+
+    def plot_loss(self, train_loss, val_loss, model_name='model_loss.png'):
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_loss, label='Training loss')
+        plt.plot(val_loss, label='Validation loss')
+        plt.title('Training and Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.savefig('model_loss.png')
 
 
 def load_and_sanitize(data_file):
@@ -137,7 +160,7 @@ def process_df(df, politics_value):
     return processed_df
 
 if __name__ == "__main__":
-    csv_file_path = r'C:\Users\user1\Desktop\AI\SURP\nlp\data\content_df.csv'
+    csv_file_path = r'/home/csstudent/Desktop/NewsBiasDetection/combo_df.csv'
     df = load_and_sanitize(csv_file_path)
 
     dfs = [process_df(df, i) for i in range(3)]
@@ -156,8 +179,8 @@ if __name__ == "__main__":
         print("Performing cross-validation...")
         bow_model.cross_validate(df['text'], df['label'])
 
-        print("Saving model...")
-        bow_model.save_model(model_name=model_name)
+        print(f"Saving Model...{model_name}")
+        bow_model.save_model(file_name=model_name)
 
         print("Model training and evaluation complete. Model saved.")
 
@@ -169,12 +192,13 @@ if __name__ == "__main__":
         train_dataset, val_dataset = longformer_model.create_datasets(df)
         print(f"Training Longformer model for {model_name}...")
 
-        train_loss = longformer_model.train(train_dataset)
+        train_loss = longformer_model.train(train_dataset, model_name)
         print("Evaluating Longformer model...")
 
         val_loss = longformer_model.evaluate(val_dataset)
-        longformer_model.plot_loss(train_loss, val_loss)
+        longformer_model.plot_loss(train_loss, val_loss, model_name=model_name)
         print("Saving Longformer model...")
-        
+
+        print(f"model name: {model_name}")
         torch.save(longformer_model.model.state_dict(), model_name)
         print("Longformer model training and evaluation complete. Model saved.")
